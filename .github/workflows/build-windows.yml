@@ -1,0 +1,49 @@
+name: Build CSNZ custom launcher (Win32 MSVC)
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build 32-bit Release launcher
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          msbuild .\CSOLauncher.sln /m /v:minimal `
+            /p:Configuration=Release `
+            /p:Platform=x86 `
+            /p:TargetName=CSOLauncher_Exe `
+            "/p:OutDir=$env:GITHUB_WORKSPACE\out\"
+
+      - name: Verify output architecture
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'out\CSOLauncher_Exe.exe'
+          if (!(Test-Path $exe)) {
+            Write-Error "Expected launcher not found: $exe"
+          }
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          if ($bytes.Length -lt 64 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+            Write-Error 'Output is not a valid MZ/PE executable.'
+          }
+          Write-Host "Built launcher: $exe ($($bytes.Length) bytes)"
+
+      - name: Upload launcher artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CSOLauncher_Exe-win32
+          path: out/CSOLauncher_Exe.exe
+          if-no-files-found: error
+          retention-days: 7
